@@ -1,0 +1,881 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SAP Cash Application — Maximizing Auto-Posting Rate</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-0:#1e1b4b; --bg-1:#312e81;
+    --ink-0:#ffffff; --ink-1:#e8edfb; --ink-2:#c6d1ec;
+    --line:rgba(255,255,255,.22);
+    --glass:rgba(11,17,44,.66);
+    --card:rgba(11,17,44,.78);
+    --teal:#2dd4bf; --green:#4ade80; --red:#fb7185; --blue:#60a5fa;
+    --purple:#c084fc; --amber:#fbbf24; --violet:#a78bfa; --orange:#fb923c;
+    --font-display:"Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-ui:"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --font-code:"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%;}
+  body{
+    font-family:var(--font-ui); color:var(--ink-0);
+    background:
+      radial-gradient(1300px 850px at 68% 32%, #1b2a5e 0%, #101a42 40%, #0a1130 68%, #060a1e 100%);
+    overflow:hidden;
+  }
+
+  /* ---- circuit-board background (reference style) ---- */
+  #bg{position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none;}
+  .slide,#chrome,#hint,#progress,#overview{z-index:1;}
+  #bg svg.circuit{position:absolute; inset:0; width:100%; height:100%; opacity:.5;}
+  #bg .scrim{
+    position:absolute; inset:0;
+    background:radial-gradient(85% 78% at 50% 52%, rgba(5,9,26,.66) 0%, rgba(5,9,26,.38) 62%, rgba(5,9,26,.08) 100%);
+  }
+  #bg .trace{fill:none; stroke:#54a9ff; stroke-width:1.3; stroke-linecap:round; stroke-linejoin:round;}
+  #bg .node-core{fill:#eaf7ff;}
+  #bg .node-halo{fill:rgba(120,195,255,.16);}
+  #bg .node-glow{animation:nodePulse 3.4s ease-in-out infinite;}
+  @keyframes nodePulse{0%,100%{opacity:.55;}50%{opacity:1;}}
+  #bg .bokeh{fill:#9cc3ff;}
+  #bg .glowspot{position:absolute; border-radius:50%; filter:blur(70px); mix-blend-mode:screen;}
+  #bg .glow-1{width:30vw; height:22vw; top:38vh; left:44vw; background:radial-gradient(circle, rgba(140,210,255,.2), transparent 70%);}
+  #bg .glow-2{width:20vw; height:16vw; top:20vh; right:8vw; background:radial-gradient(circle, rgba(90,170,255,.15), transparent 70%);}
+  #bg .glow-3{width:24vw; height:18vw; bottom:6vh; left:14vw; background:radial-gradient(circle, rgba(70,140,255,.1), transparent 70%);}
+  #bg .noise{
+    position:absolute; inset:0; opacity:.4; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.13'/%3E%3C/svg%3E");
+  }
+  #bg .vignette{
+    position:absolute; inset:0;
+    background:radial-gradient(130% 110% at 55% 42%, transparent 52%, rgba(3,6,18,.72) 100%);
+  }
+  @media (prefers-reduced-motion: reduce){ #bg .node-glow{animation:none;} }
+
+  #progress{position:fixed; top:0; left:0; height:3px; background:linear-gradient(90deg,var(--teal),var(--violet)); width:0%; z-index:50; transition:width .35s ease; box-shadow:0 0 12px rgba(45,212,191,.6);}
+
+  #deck{position:relative; height:100vh; width:100vw;}
+  .slide{
+    position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center;
+    padding:5vh 6vw 11vh; opacity:0; transform:translateY(16px) scale(.985);
+    pointer-events:none; transition:opacity .38s ease, transform .38s ease;
+    overflow-y:auto;
+  }
+  .slide.active{opacity:1; transform:translateY(0) scale(1); pointer-events:auto;}
+
+  .slidenum{
+    position:absolute; top:4vh; right:5vw; font-family:var(--font-display);
+    font-size:5.5rem; font-weight:700; color:rgba(255,255,255,.12);
+    line-height:1; user-select:none; pointer-events:none;
+  }
+
+  .kicker{
+    display:inline-flex; align-items:center; gap:10px; align-self:flex-start;
+    font-size:.74rem; letter-spacing:.18em; text-transform:uppercase; color:var(--teal);
+    font-weight:700; margin-bottom:16px; font-family:var(--font-display);
+  }
+  .kicker .dot{width:7px;height:7px;border-radius:50%;background:var(--teal); box-shadow:0 0 10px var(--teal);}
+
+  h1{
+    font-family:var(--font-display); font-size:clamp(2.6rem,5.2vw,4.2rem); line-height:1.05;
+    letter-spacing:-.03em; margin-bottom:14px; font-weight:700;
+  }
+  h2{
+    font-family:var(--font-display); font-size:clamp(1.6rem,3.1vw,2.4rem); line-height:1.12;
+    letter-spacing:-.02em; margin-bottom:22px; font-weight:700;
+  }
+  h3{font-family:var(--font-display); font-size:1.02rem; margin-bottom:12px; font-weight:600; letter-spacing:-.01em;}
+  .grad{
+    background:linear-gradient(92deg,#67e8f9 0%,#7db4ff 55%,#dbeafe 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  p,li{color:var(--ink-1); line-height:1.55;}
+  h1,h2{text-shadow:0 2px 18px rgba(0,0,0,.55);}
+  h3,p,li,td,th{text-shadow:0 1px 8px rgba(0,0,0,.45);}
+  strong{font-weight:700; color:var(--ink-0);}
+  .muted{color:var(--ink-2);}
+  .mono{font-family:var(--font-code);}
+
+  table{border-collapse:separate; border-spacing:0; width:100%; font-size:.88rem; border:1px solid var(--line); border-radius:12px; overflow:hidden; background:rgba(9,14,38,.78);}
+  th,td{padding:8px 14px; text-align:left; border-bottom:1px solid var(--line); color:var(--ink-1);}
+  th{background:rgba(255,255,255,.14); color:var(--ink-0); font-weight:600; font-family:var(--font-display); font-size:.8rem; letter-spacing:.04em; text-transform:uppercase;}
+  tr:last-child td{border-bottom:none;}
+  td strong{color:var(--ink-0);}
+
+  .row{display:grid; gap:16px;}
+  .cols-2{grid-template-columns:repeat(2,1fr);}
+  .cols-3{grid-template-columns:repeat(3,1fr);}
+  .cols-4{grid-template-columns:repeat(4,1fr);}
+  .cols-5{grid-template-columns:repeat(5,1fr);}
+
+  .panel{
+    border:1px solid var(--line); border-radius:18px; padding:16px 18px;
+    background:linear-gradient(160deg, var(--card), rgba(11,17,44,.62));
+    backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+    box-shadow:0 20px 44px -26px rgba(0,0,0,.8), inset 0 1px 0 rgba(255,255,255,.14);
+  }
+
+  .stat{text-align:center; padding:22px 14px; position:relative; overflow:hidden;}
+  .stat::before{
+    content:""; position:absolute; inset:0; opacity:.5; pointer-events:none;
+    background:radial-gradient(240px 120px at 50% -20%, var(--glow, transparent), transparent 70%);
+  }
+  .stat .num{font-family:var(--font-display); font-size:2.9rem; font-weight:700; line-height:1; letter-spacing:-.02em;}
+  .stat .lbl{font-size:.8rem; color:var(--ink-2); margin-top:10px; letter-spacing:.02em;}
+
+  .bd-teal{border-color:rgba(45,212,191,.3);}   .glow-teal{--glow:rgba(45,212,191,.28);}
+  .bd-green{border-color:rgba(74,222,128,.3);}  .glow-green{--glow:rgba(74,222,128,.28);}
+  .bd-red{border-color:rgba(251,113,133,.32);}  .glow-red{--glow:rgba(251,113,133,.3);}
+  .bd-blue{border-color:rgba(96,165,250,.3);}   .glow-blue{--glow:rgba(96,165,250,.28);}
+  .bd-purple{border-color:rgba(192,132,252,.3);}.glow-purple{--glow:rgba(192,132,252,.28);}
+  .bd-orange{border-color:rgba(251,146,60,.3);}
+  .bd-yellow{border-color:rgba(251,191,36,.3);}
+  .bd-indigo{border-color:rgba(129,140,248,.32);}
+  .bd-amber{border-color:rgba(251,191,36,.3);}
+
+  .t-teal{color:var(--teal);} .t-green{color:var(--green);} .t-red{color:var(--red);}
+  .t-blue{color:var(--blue);} .t-purple{color:var(--purple);} .t-amber{color:var(--amber);}
+  .t-indigo{color:#818cf8;} .t-orange{color:var(--orange);} .t-yellow{color:#fde047;}
+
+  .tag{
+    display:inline-block; font-size:.7rem; font-weight:700; border-radius:999px;
+    padding:3px 11px; margin-top:10px; letter-spacing:.03em; border:1px solid;
+  }
+  .tag.red{background:rgba(251,113,133,.12); color:var(--red); border-color:rgba(251,113,133,.3);}
+  .tag.orange{background:rgba(251,146,60,.12); color:var(--orange); border-color:rgba(251,146,60,.3);}
+  .tag.yellow{background:rgba(251,191,36,.12); color:var(--amber); border-color:rgba(251,191,36,.3);}
+  .tag.blue{background:rgba(96,165,250,.12); color:var(--blue); border-color:rgba(96,165,250,.3);}
+  .tag.purple{background:rgba(192,132,252,.12); color:var(--purple); border-color:rgba(192,132,252,.3);}
+  .tag.teal{background:rgba(45,212,191,.12); color:var(--teal); border-color:rgba(45,212,191,.3);}
+  .tag.green{background:rgba(74,222,128,.12); color:var(--green); border-color:rgba(74,222,128,.3);}
+  .tag.indigo{background:rgba(129,140,248,.12); color:#818cf8; border-color:rgba(129,140,248,.3);}
+
+  .item{
+    display:flex; gap:14px; align-items:flex-start; border-radius:14px; padding:12px 14px;
+    margin-bottom:10px; border:1px solid var(--line); background:var(--glass);
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    border-left-width:3px; transition:transform .15s;
+  }
+  .item .desc{font-size:.84rem; color:var(--ink-2);}
+  .item .emoji{font-size:1.25rem; filter:saturate(1.2);}
+
+  .cause{position:relative;}
+  .cause .letter{
+    position:absolute; top:12px; right:16px; font-family:var(--font-display);
+    font-size:2.2rem; font-weight:700; color:rgba(148,163,184,.1); line-height:1;
+  }
+  .cause .desc{font-size:.83rem; color:var(--ink-2); margin-top:6px;}
+  .cause .emoji{font-size:1.5rem; display:block; margin-bottom:8px;}
+  .cause strong{font-family:var(--font-display); font-weight:600;}
+
+  pre{
+    background:rgba(2,6,16,.7); border:1px solid var(--line); border-radius:12px;
+    padding:12px 16px; font-family:var(--font-code); font-size:.82rem; line-height:1.6;
+    overflow-x:auto; margin:10px 0; color:#a5f3fc;
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.05);
+  }
+
+  .phase{
+    border-radius:22px; padding:22px; color:#fff; position:relative; overflow:hidden;
+    border:1px solid rgba(255,255,255,.14);
+    box-shadow:0 24px 50px -30px rgba(0,0,0,.9), inset 0 1px 0 rgba(255,255,255,.2);
+  }
+  .phase::after{content:""; position:absolute; inset:0; background:radial-gradient(300px 160px at 85% -10%, rgba(255,255,255,.22), transparent 65%); pointer-events:none;}
+  .phase .eyebrow{font-size:.66rem; font-weight:700; text-transform:uppercase; letter-spacing:.16em; opacity:.85; font-family:var(--font-display);}
+  .phase .big{font-family:var(--font-display); font-size:2rem; font-weight:700; margin-top:6px; letter-spacing:-.02em;}
+  .phase .sub{font-size:.84rem; opacity:.88; margin:2px 0 14px;}
+  .phase ul{list-style:none; font-size:.84rem;}
+  .phase li{margin-bottom:6px; color:#fff;}
+  .phase .uplift{margin-top:14px; background:rgba(255,255,255,.18); border:1px solid rgba(255,255,255,.25); border-radius:10px; padding:7px; text-align:center; font-weight:700; backdrop-filter:blur(4px);}
+  .ph-teal{background:linear-gradient(150deg,#0f766e,#134e4a);}
+  .ph-amber{background:linear-gradient(150deg,#b45309,#7c2d12);}
+  .ph-violet{background:linear-gradient(150deg,#6d28d9,#4c1d95);}
+
+  .timeline{
+    border-left:3px solid; padding:14px 16px 16px 18px; position:relative;
+    background:var(--glass); border-radius:0 16px 16px 0;
+    backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+  }
+  .timeline::before{content:""; position:absolute; left:-7.5px; top:16px; width:12px; height:12px; border-radius:50%; background:currentColor;}
+  .timeline ul{padding-left:16px; font-size:.84rem;}
+  .timeline li{margin-bottom:6px;}
+  .timeline .target{
+    margin-top:12px; border-radius:999px; padding:6px 14px; font-size:.82rem; font-weight:700;
+    display:inline-block; border:1px solid;
+  }
+
+  .code-row{
+    display:flex; gap:12px; border:1px solid var(--line); border-left:3px solid; border-radius:10px;
+    padding:7px 12px; margin-bottom:7px; font-size:.79rem; align-items:baseline; background:rgba(9,14,38,.7);
+  }
+  .code-row .code{font-family:var(--font-code); font-weight:700; min-width:96px; font-size:.76rem;}
+
+  .banner{
+    background:linear-gradient(92deg, rgba(45,212,191,.15), rgba(167,139,250,.15));
+    border:1px solid rgba(45,212,191,.3); color:var(--ink-0);
+    border-radius:14px; padding:13px 24px; text-align:center; margin-top:18px; font-size:1rem;
+    backdrop-filter:blur(8px);
+  }
+  .cta{display:flex; gap:16px; justify-content:center; flex-wrap:wrap; margin-top:20px;}
+  .cta div{
+    color:#fff; border-radius:14px; padding:14px 26px; font-weight:700; font-family:var(--font-display);
+    border:1px solid rgba(255,255,255,.18); box-shadow:0 16px 34px -20px rgba(0,0,0,.9);
+    transition:transform .15s;
+  }
+  .cta div:hover{transform:translateY(-3px);}
+
+  .tcode{
+    text-align:center; padding:12px 8px; border-radius:14px; border:1px solid rgba(96,165,250,.3);
+    background:rgba(9,14,38,.7);
+  }
+  .tcode strong{font-family:var(--font-code); font-size:.95rem;}
+  .tcode div{font-size:.72rem; color:var(--ink-2); margin-top:4px;}
+
+  #chrome{
+    position:fixed; left:0; right:0; bottom:0; display:flex; align-items:center;
+    justify-content:space-between; padding:15px 28px; z-index:40;
+    background:linear-gradient(0deg, rgba(7,12,34,.9), transparent);
+  }
+  #chrome .meta{display:flex; align-items:center; gap:14px; color:var(--ink-2); font-size:.84rem;}
+  #chrome .section-label{color:var(--ink-1); font-weight:600; font-family:var(--font-display);}
+  #chrome .count{font-variant-numeric:tabular-nums; font-family:var(--font-code); font-size:.78rem;}
+  .navbtns{display:flex; gap:10px;}
+  .navbtn{
+    width:42px; height:42px; border-radius:50%; border:1px solid var(--line);
+    background:rgba(255,255,255,.05); color:var(--ink-0); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; transition:background .15s, transform .15s, border-color .15s, box-shadow .15s;
+    backdrop-filter:blur(8px);
+  }
+  .navbtn:hover{background:rgba(45,212,191,.12); border-color:var(--teal); transform:translateY(-2px); box-shadow:0 0 18px rgba(45,212,191,.25);}
+  .navbtn svg{width:18px;height:18px;}
+
+  #hint{
+    position:fixed; top:16px; right:22px; z-index:40; color:var(--ink-2); font-size:.74rem;
+    background:rgba(255,255,255,.04); border:1px solid var(--line); padding:6px 14px; border-radius:999px;
+    backdrop-filter:blur(8px);
+  }
+  #hint kbd{background:rgba(255,255,255,.08); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-family:var(--font-code); color:var(--ink-0); font-size:.7rem;}
+
+  #overview{position:fixed; inset:0; background:rgba(7,12,34,.96); z-index:60; display:none; padding:6vh 6vw; overflow:auto; backdrop-filter:blur(10px);}
+  #overview.open{display:block;}
+  #overview h3{color:var(--ink-2); font-weight:600; letter-spacing:.12em; text-transform:uppercase; font-size:.8rem; margin-bottom:22px;}
+  #overview .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:16px;}
+  #overview .card{
+    border:1px solid var(--line); background:rgba(255,255,255,.04); border-radius:14px; padding:16px 18px;
+    cursor:pointer; transition:border-color .15s, transform .15s, box-shadow .15s; min-height:92px;
+  }
+  #overview .card:hover{border-color:var(--teal); transform:translateY(-3px); box-shadow:0 0 24px rgba(45,212,191,.15);}
+  #overview .card .n{color:var(--teal); font-size:.72rem; font-weight:700; margin-bottom:8px; font-family:var(--font-code);}
+  #overview .card .t{color:var(--ink-0); font-size:.92rem; font-weight:600; line-height:1.3; font-family:var(--font-display);}
+  #overview .card.current{border-color:var(--amber); box-shadow:0 0 20px rgba(251,191,36,.18);}
+
+  ::selection{background:rgba(45,212,191,.35);}
+  @media (max-width:900px){
+    .cols-2,.cols-3,.cols-4,.cols-5{grid-template-columns:1fr;}
+    #chrome .meta{display:none;}
+    .slidenum{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div id="bg">
+  <svg class="circuit" id="circuit" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <filter id="nodeGlow" x="-200%" y="-200%" width="500%" height="500%">
+        <feGaussianBlur stdDeviation="2.6" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="softBlur" x="-60%" y="-60%" width="220%" height="220%">
+        <feGaussianBlur stdDeviation="7"/>
+      </filter>
+    </defs>
+    <g id="bokeh-layer"></g>
+    <g id="trace-layer"></g>
+    <g id="node-layer"></g>
+  </svg>
+  <div class="glowspot glow-1"></div>
+  <div class="glowspot glow-2"></div>
+  <div class="glowspot glow-3"></div>
+  <div class="scrim"></div>
+  <div class="noise"></div>
+  <div class="vignette"></div>
+</div>
+
+<script>
+(function(){
+  var NS = 'http://www.w3.org/2000/svg';
+  var seed = 1337;
+  function rnd(){ seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function el(name, attrs, parent){
+    var e = document.createElementNS(NS, name);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    parent.appendChild(e);
+    return e;
+  }
+  var bokehL = document.getElementById('bokeh-layer');
+  var traceL = document.getElementById('trace-layer');
+  var nodeL  = document.getElementById('node-layer');
+
+  // bokeh circles
+  for (var b = 0; b < 24; b++){
+    var big = rnd() > .55;
+    el('circle', {
+      cx: rnd()*1600, cy: rnd()*900,
+      r: big ? 26 + rnd()*48 : 8 + rnd()*16,
+      'class':'bokeh',
+      opacity: (.04 + rnd()*.12).toFixed(3),
+      filter: big ? 'url(#softBlur)' : ''
+    }, bokehL);
+  }
+
+  function node(x, y, bright){
+    el('circle', {cx:x, cy:y, r: bright ? 15 : 8 + rnd()*4, 'class':'node-halo', opacity: bright ? .28 : .18}, nodeL);
+    var core = el('circle', {cx:x, cy:y, r: bright ? 3.4 : 2.3, 'class':'node-core node-glow', filter:'url(#nodeGlow)'}, nodeL);
+    core.style.animationDelay = (rnd()*3).toFixed(2) + 's';
+    if (bright) el('circle', {cx:x, cy:y, r: 26, 'class':'node-halo', opacity:.1}, nodeL);
+  }
+
+  function trace(x, y, segs, endNode, op){
+    var pts = [[x, y]];
+    for (var s = 0; s < segs; s++){
+      var len = 60 + rnd()*150, c = rnd(), dx, dy;
+      if (c < .5){ dx = len; dy = 0; }
+      else if (c < .75){ dx = len*.707; dy = len*.707; }
+      else { dx = len*.707; dy = -len*.707; }
+      x += dx; y += dy; pts.push([x, y]);
+    }
+    el('polyline', {
+      points: pts.map(function(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' '),
+      'class':'trace', opacity: op.toFixed(2),
+      'stroke-width': (1 + rnd()*.6).toFixed(2)
+    }, traceL);
+    if (endNode) node(x, y, rnd() > .8);
+  }
+
+  // left bundle: parallel lines sweeping in at 45deg then flattening out
+  for (var i = 0; i < 14; i++){
+    var sx = -60, sy = 20 + i*13;
+    var d1 = 250 + i*7;
+    var hx = sx + d1, hy = sy + d1;
+    var h1 = 160 + rnd()*320;
+    var pts = [[sx,sy],[hx,hy],[hx+h1,hy]];
+    if (rnd() > .4){
+      var d2 = 50 + rnd()*90, h2 = 70 + rnd()*180;
+      pts.push([hx+h1+d2, hy+d2], [hx+h1+d2+h2, hy+d2]);
+    }
+    el('polyline', {
+      points: pts.map(function(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' '),
+      'class':'trace', opacity: (.25 + rnd()*.35).toFixed(2), 'stroke-width':'1.2'
+    }, traceL);
+    var last = pts[pts.length-1];
+    if (rnd() > .5) node(last[0], last[1], false);
+  }
+
+  // central-right mesh
+  for (var t = 0; t < 30; t++){
+    trace(560 + rnd()*560, 280 + rnd()*340, 2 + Math.floor(rnd()*3), true, .2 + rnd()*.5);
+  }
+
+  // long diagonals to corners (bright landing nodes)
+  var diags = [[880, 960, 1500, 90], [1040, 950, 1560, 430], [680, 950, 300, 560]];
+  diags.forEach(function(d){
+    el('line', {x1:d[0], y1:d[1], x2:d[2], y2:d[3], 'class':'trace', opacity:.5, 'stroke-width':'1.4'}, traceL);
+    node(d[2], d[3], true);
+  });
+})();
+</script>
+
+<div id="progress"></div>
+<div id="hint"><kbd>&#8594;</kbd> next &nbsp; <kbd>&#8592;</kbd> back &nbsp; <kbd>O</kbd> overview &nbsp; <kbd>F</kbd> fullscreen</div>
+
+<div id="deck">
+
+  <!-- 1 · Title -->
+  <section class="slide active" data-section="Intro">
+    <span class="kicker"><span class="dot"></span>Finance Operations Excellence · June 2026</span>
+    <h1>SAP Cash<br>Application</h1>
+    <h2 class="grad" style="margin-bottom:18px;">Maximizing Auto-Posting Rate to 90%+</h2>
+    <p class="muted" style="font-size:1.1rem; letter-spacing:.02em;">Root Causes &nbsp;·&nbsp; Improvement Strategies &nbsp;·&nbsp; Measurable Targets</p>
+    <div style="display:flex; gap:12px; margin-top:34px;">
+      <span class="tag teal" style="margin:0; font-size:.78rem;">13% today</span>
+      <span class="tag indigo" style="margin:0; font-size:.78rem;">→ 85%+ in 6 months</span>
+      <span class="tag green" style="margin:0; font-size:.78rem;">–60% processing cost</span>
+    </div>
+  </section>
+
+  <!-- 2 · Baseline -->
+  <section class="slide" data-section="Baseline">
+    <div class="slidenum">02</div>
+    <span class="kicker"><span class="dot"></span>Where we stand</span>
+    <h2>Current State <span class="grad">Baseline</span></h2>
+    <div class="row cols-3" style="margin-bottom:22px;">
+      <div class="panel stat bd-teal glow-teal"><div class="num t-teal">3225</div><div class="lbl">Total Payments / Month</div></div>
+      <div class="panel stat bd-green glow-green"><div class="num t-green">430</div><div class="lbl">Auto-Posted ✅</div></div>
+      <div class="panel stat bd-red glow-red"><div class="num t-red">2795</div><div class="lbl">Manual Posted ⚠️</div></div>
+    </div>
+    <table>
+      <thead><tr><th>Metric</th><th>Current</th><th>Phase 1</th><th>Phase 2</th><th>Phase 3</th></tr></thead>
+      <tbody>
+        <tr><td>Auto-Posting Rate</td><td><strong class="t-red">13%</strong></td><td>50%</td><td>70%</td><td><strong class="t-green">85%+</strong></td></tr>
+        <tr><td>Manual Effort</td><td><strong class="t-red">87%</strong></td><td>50%</td><td>30%</td><td><strong class="t-green">&lt;15%</strong></td></tr>
+        <tr><td>Processing Time</td><td>High</td><td>Medium</td><td>Low</td><td><strong>Low</strong></td></tr>
+        <tr><td>Error Rate</td><td>Medium</td><td>Low</td><td>Low</td><td><strong>Very Low</strong></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 3 · Business impact -->
+  <section class="slide" data-section="Impact">
+    <div class="slidenum">03</div>
+    <span class="kicker"><span class="dot"></span>Why it matters</span>
+    <h2>Business Impact of <span class="grad">High Manual Posting</span></h2>
+    <div class="row cols-2">
+      <div>
+        <h3 class="t-red">🔴 Current Pain Points</h3>
+        <div class="item" style="border-left-color:var(--red);"><span class="emoji">💸</span><div><strong>Higher Processing Cost</strong><br><span class="desc">Manual posting costs 3–5× more per transaction</span></div></div>
+        <div class="item" style="border-left-color:var(--orange);"><span class="emoji">⏱️</span><div><strong>SLA Delays</strong><br><span class="desc">~2 additional days DSO from manual queue backlogs</span></div></div>
+        <div class="item" style="border-left-color:var(--amber);"><span class="emoji">❌</span><div><strong>Human Errors</strong><br><span class="desc">Misapplied payments trigger customer disputes</span></div></div>
+        <div class="item" style="border-left-color:var(--purple);"><span class="emoji">📉</span><div><strong>Scalability Risk</strong><br><span class="desc">Volume growth requires headcount increase</span></div></div>
+      </div>
+      <div>
+        <h3 class="t-green">🟢 Benefits of 85%+ Auto-Posting</h3>
+        <div class="item" style="border-left-color:var(--green);"><span class="emoji">✅</span><div><strong>Reduced Manual Effort</strong><br><span class="desc">AR team focuses only on exception handling</span></div></div>
+        <div class="item" style="border-left-color:var(--teal);"><span class="emoji">⚡</span><div><strong>Faster Cash Application</strong><br><span class="desc">Same-day cash visibility across all payments</span></div></div>
+        <div class="item" style="border-left-color:var(--blue);"><span class="emoji">🔒</span><div><strong>Better Compliance</strong><br><span class="desc">Full digital audit trail, fewer disputes</span></div></div>
+        <div class="item" style="border-left-color:#818cf8;"><span class="emoji">📈</span><div><strong>Scalability</strong><br><span class="desc">Handle 2× volume without adding headcount</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 · Root causes A–F -->
+  <section class="slide" data-section="Root Causes">
+    <div class="slidenum">04</div>
+    <span class="kicker"><span class="dot"></span>Diagnosis</span>
+    <h2>Root Causes: <span class="grad">Why Auto-Posting Fails</span></h2>
+    <div class="row cols-3">
+      <div class="panel cause bd-red">
+        <div class="letter">A</div>
+        <span class="emoji">📄</span><strong>Missing Invoice Reference</strong>
+        <div class="desc">Customer pays with vague reference like "Monthly Payment" — system cannot match to any invoice</div>
+        <span class="tag red">High · +5–10% gain</span>
+      </div>
+      <div class="panel cause bd-orange">
+        <div class="letter">B</div>
+        <span class="emoji">🧾</span><strong>Bundled Payments</strong>
+        <div class="desc">Customer pays 3 invoices (10K+20K+30K = 60K) with no remittance breakup provided</div>
+        <span class="tag orange">High · +3–8% gain</span>
+      </div>
+      <div class="panel cause bd-yellow">
+        <div class="letter">C</div>
+        <span class="emoji">💰</span><strong>Short Payments</strong>
+        <div class="desc">Invoice = ₹10,000 · Payment = ₹9,800. Difference of ₹200 causes system exception</div>
+        <span class="tag yellow">Medium · +5% gain</span>
+      </div>
+      <div class="panel cause bd-blue">
+        <div class="letter">D</div>
+        <span class="emoji">➕</span><strong>Overpayments</strong>
+        <div class="desc">Invoice = ₹10,000 · Payment = ₹10,100. Extra ₹100 causes exception queue entry</div>
+        <span class="tag blue">Medium · +2–5% gain</span>
+      </div>
+      <div class="panel cause bd-purple">
+        <div class="letter">E</div>
+        <span class="emoji">🔁</span><strong>Duplicate References</strong>
+        <div class="desc">Invoice 12345 exists across multiple customer accounts — system cannot decide which to clear</div>
+        <span class="tag purple">Low · +2–3% gain</span>
+      </div>
+      <div class="panel cause bd-teal">
+        <div class="letter">F</div>
+        <span class="emoji">🏦</span><strong>Bank Statement Format</strong>
+        <div class="desc">Same invoice arrives as INV#123, INV-123, Invoice123 — matching fails due to format mismatch</div>
+        <span class="tag teal">Medium · +3–5% gain</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · Root causes G–H + cumulative -->
+  <section class="slide" data-section="Root Causes">
+    <div class="slidenum">05</div>
+    <span class="kicker"><span class="dot"></span>Diagnosis · continued</span>
+    <h2>Root Causes <span class="grad">(Continued)</span></h2>
+    <div class="row cols-2" style="margin-bottom:16px;">
+      <div class="panel bd-amber">
+        <h3 class="t-amber">G. Timing Issues</h3>
+        <p style="font-size:.88rem;">Payment received <strong>before invoice is generated</strong> in SAP.</p>
+<pre>Payment arrives:   Day 1
+Invoice created:   Day 2</pre>
+        <p style="font-size:.88rem;">System finds no open item to match → goes to manual queue.</p>
+        <span class="tag yellow">Expected gain: +1–3%</span>
+      </div>
+      <div class="panel bd-red">
+        <h3 class="t-red">H. Customer Master Data Issues</h3>
+        <table style="font-size:.8rem; margin-bottom:10px;">
+          <thead><tr><th>Problem</th><th>Effect</th></tr></thead>
+          <tbody>
+            <tr><td>Wrong Customer ID</td><td>Match fails</td></tr>
+            <tr><td>Duplicate Customers</td><td>Ambiguous result</td></tr>
+            <tr><td>Missing Bank Key</td><td>No auto-link</td></tr>
+            <tr><td>Inactive Customer</td><td>Exception</td></tr>
+          </tbody>
+        </table>
+        <span class="tag red">Expected gain: +2–4%</span>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>📊 Cumulative Gain Potential</h3>
+      <table style="font-size:.84rem;">
+        <thead><tr><th>Root Cause</th><th>Min Gain</th><th>Max Gain</th></tr></thead>
+        <tbody>
+          <tr><td>A. Missing Reference + B. Bundled</td><td>+8%</td><td>+18%</td></tr>
+          <tr><td>C. Short + D. Over Payments</td><td>+7%</td><td>+10%</td></tr>
+          <tr><td>E. Duplicate + F. Bank Format + G. Timing + H. Master Data</td><td>+8%</td><td>+15%</td></tr>
+          <tr><td><strong>Total Possible Uplift</strong></td><td><strong class="t-teal">+23%</strong></td><td><strong class="t-teal">+43%</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 6 · Improvements -->
+  <section class="slide" data-section="Improvements">
+    <div class="slidenum">06</div>
+    <span class="kicker"><span class="dot"></span>The levers</span>
+    <h2>5 High-ROI <span class="grad">Process Improvements</span></h2>
+    <div class="row cols-2">
+      <div class="panel bd-teal">
+        <div style="display:flex; justify-content:space-between; gap:8px; align-items:baseline;">
+          <strong class="t-teal" style="font-family:var(--font-display);">⚙️ 1. Configure Tolerance Limits</strong>
+          <span class="tag green" style="margin:0; white-space:nowrap;">+5% · 1 Wk</span>
+        </div>
+        <p style="font-size:.83rem; color:var(--ink-2); margin-top:8px;">Auto write-off differences ≤ ₹500. Short/over-payments auto-post with residual item — eliminates the most common exception instantly.</p>
+        <span class="tag teal">🏷 Quick Win</span>
+      </div>
+      <div class="panel bd-blue">
+        <div style="display:flex; justify-content:space-between; gap:8px; align-items:baseline;">
+          <strong class="t-blue" style="font-family:var(--font-display);">🔤 2. Reference Normalization Engine</strong>
+          <span class="tag green" style="margin:0; white-space:nowrap;">+3–5% · 2 Wks</span>
+        </div>
+        <p style="font-size:.83rem; color:var(--ink-2); margin-top:8px;">INV#123, INV-123, Invoice123 → all normalize to <strong>123</strong> before matching. Massive uplift for bank statement format mismatches.</p>
+        <span class="tag blue">🏷 Quick Win</span>
+      </div>
+      <div class="panel bd-purple">
+        <div style="display:flex; justify-content:space-between; gap:8px; align-items:baseline;">
+          <strong class="t-purple" style="font-family:var(--font-display);">🔄 3. Smart Retry Engine</strong>
+          <span class="tag yellow" style="margin:0; white-space:nowrap;">+1–3% · 1 Mo</span>
+        </div>
+        <p style="font-size:.83rem; color:var(--ink-2); margin-top:8px;">Instead of immediate manual queue, retry at 1hr → 6hr → 24hr. Timing mismatches self-resolve when the invoice catches up in SAP.</p>
+        <span class="tag purple">🏷 Medium Term</span>
+      </div>
+      <div class="panel bd-orange">
+        <div style="display:flex; justify-content:space-between; gap:8px; align-items:baseline;">
+          <strong class="t-orange" style="font-family:var(--font-display);">🗂️ 4. Exception Reason Code Tracking</strong>
+          <span class="tag green" style="margin:0; white-space:nowrap;">Enabler · 1 Wk</span>
+        </div>
+        <p style="font-size:.83rem; color:var(--ink-2); margin-top:8px;">Tag every manual posting: Missing Invoice / Short Pay / Over Pay / Duplicate Ref / Data Issue. Run monthly Pareto to prioritize fixes.</p>
+        <span class="tag orange">🏷 Quick Win</span>
+      </div>
+      <div class="panel bd-indigo" style="grid-column:1/-1;">
+        <div style="display:flex; justify-content:space-between; gap:8px; align-items:baseline;">
+          <strong class="t-indigo" style="font-family:var(--font-display);">📧 5. Customer Education &amp; Standard Remittance Format</strong>
+          <span class="tag blue" style="margin:0; white-space:nowrap;">+5–10% · 1 Month</span>
+        </div>
+        <p style="font-size:.83rem; color:var(--ink-2); margin-top:8px;">Send remittance template to top 20 customers causing most exceptions. Mandate: <strong>Invoice Number + Amount + Customer ID</strong> on every payment. Simple but consistently the highest-impact lever — zero cost, immediate results.</p>
+        <span class="tag indigo">🏷 Quick Win · Highest ROI</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · Matching rules -->
+  <section class="slide" data-section="Matching">
+    <div class="slidenum">07</div>
+    <span class="kicker"><span class="dot"></span>Inside SAP</span>
+    <h2>Matching Rule <span class="grad">Improvements</span></h2>
+    <div class="row cols-3" style="margin-bottom:16px;">
+      <div class="panel bd-red">
+        <strong class="t-red" style="font-size:.74rem; text-transform:uppercase; letter-spacing:.08em; font-family:var(--font-display);">❌ Current — Too Strict</strong>
+        <p style="font-size:.83rem; margin-top:10px;">SAP default only matches on:</p>
+        <pre>Exact BELNR match only</pre>
+        <p style="font-size:.83rem;">Anything else → <strong>Manual Queue</strong></p>
+        <span class="tag red">Thousands of near-matches discarded daily</span>
+      </div>
+      <div class="panel bd-green">
+        <strong class="t-green" style="font-size:.74rem; text-transform:uppercase; letter-spacing:.08em; font-family:var(--font-display);">✅ Proposed — Rule Cascade</strong>
+        <table style="font-size:.78rem; margin-top:10px;">
+          <tbody>
+            <tr><td>Exact Invoice Match</td><td><strong class="t-green">100% ✓</strong></td></tr>
+            <tr><td>Invoice + Amount</td><td><strong class="t-green">95% ✓</strong></td></tr>
+            <tr><td>Customer + Amount</td><td><strong class="t-teal">90% ✓</strong></td></tr>
+            <tr><td>Fuzzy Reference</td><td><strong class="t-amber">85% ✓</strong></td></tr>
+            <tr><td>No match</td><td><strong class="t-red">→ Manual</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <strong class="muted" style="font-size:.74rem; text-transform:uppercase; letter-spacing:.08em; font-family:var(--font-display);">🔤 Fuzzy Match Example</strong>
+        <p style="font-size:.83rem; margin-top:10px;">All refer to the <strong>same invoice</strong>:</p>
+<pre>INV12345
+INV-12345
+Invoice12345
+inv 12345
+12345</pre>
+        <span class="tag green">All 5 → auto-post after normalization</span>
+      </div>
+    </div>
+    <div class="panel bd-blue">
+      <strong class="t-blue" style="font-family:var(--font-display);">⚙️ SAP T-Code Configuration Reference</strong>
+      <div class="row cols-5" style="margin-top:12px;">
+        <div class="tcode"><strong class="t-blue">FEBAN</strong><div>Search Algorithm</div></div>
+        <div class="tcode"><strong class="t-blue">OBA3</strong><div>Tolerance Groups</div></div>
+        <div class="tcode"><strong class="t-blue">FD02</strong><div>Customer Master</div></div>
+        <div class="tcode"><strong class="t-blue">OBAY</strong><div>Lockbox Rules</div></div>
+        <div class="tcode"><strong class="t-blue">FF.5</strong><div>Bank Statement</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 · Roadmap -->
+  <section class="slide" data-section="Roadmap">
+    <div class="slidenum">08</div>
+    <span class="kicker"><span class="dot"></span>The plan</span>
+    <h2>3-Phase Roadmap to <span class="grad">90%+</span></h2>
+    <div class="row cols-3">
+      <div class="phase ph-teal">
+        <div class="eyebrow">Phase 1 · Months 1–2</div>
+        <div class="big">13% → 50%</div>
+        <div class="sub">Foundation Fixes</div>
+        <ul>
+          <li>✅ Exception analysis &amp; root cause audit</li>
+          <li>✅ Tolerance limit configuration</li>
+          <li>✅ Reference normalization</li>
+          <li>✅ Retry engine setup</li>
+          <li>✅ Exception reason code tracking</li>
+        </ul>
+        <div class="uplift">+37% uplift</div>
+      </div>
+      <div class="phase ph-amber">
+        <div class="eyebrow">Phase 2 · Months 2–3</div>
+        <div class="big">50% → 70%</div>
+        <div class="sub">Data &amp; Process Quality</div>
+        <ul>
+          <li>✅ Customer master data cleanup</li>
+          <li>✅ Customer remittance education</li>
+          <li>✅ Enhanced FEBAN rule tuning</li>
+          <li>✅ Virtual account number pilot</li>
+          <li>✅ Lockbox parsing improvements</li>
+        </ul>
+        <div class="uplift">+20% uplift</div>
+      </div>
+      <div class="phase ph-violet">
+        <div class="eyebrow">Phase 3 · Months 3–6</div>
+        <div class="big">70% → 85%+</div>
+        <div class="sub">Intelligent Matching</div>
+        <ul>
+          <li>✅ Confidence-based matching rules</li>
+          <li>✅ Deduction management workflow</li>
+          <li>✅ Monthly tune-up governance</li>
+          <li>✅ KPI dashboard &amp; SLA tracking</li>
+          <li>✅ Expand virtual accounts to top 50</li>
+        </ul>
+        <div class="uplift">+15% uplift</div>
+      </div>
+    </div>
+    <div class="banner">🎯 <strong>Cumulative Target: 13% → 85%+ Auto-Posting Rate within 6 Months</strong></div>
+  </section>
+
+  <!-- 9 · Action plan -->
+  <section class="slide" data-section="Action Plan">
+    <div class="slidenum">09</div>
+    <span class="kicker"><span class="dot"></span>Execution</span>
+    <h2>60-90-180 Day <span class="grad">Action Plan</span></h2>
+    <div class="row cols-3">
+      <div class="timeline t-teal" style="border-color:#14b8a6;">
+        <h3 style="color:var(--ink-0);">Days 1–60</h3>
+        <ul>
+          <li><strong>Baseline audit</strong> — extract 3-month failure report from SAP</li>
+          <li><strong>Categorize failures</strong> — data vs config vs process</li>
+          <li><strong>Identify top 20 customers</strong> causing most manual postings</li>
+          <li><strong>Master data check</strong> — flag missing bank keys / IBAN</li>
+          <li><strong>Configure tolerance limits</strong> — short/over payments</li>
+          <li><strong>Deploy reason code tagging</strong> for all manual postings</li>
+          <li><strong>Present quick-win findings</strong> to AR Manager</li>
+        </ul>
+        <div class="target t-teal" style="border-color:rgba(45,212,191,.4); background:rgba(45,212,191,.1);">Target: 13% → 50%</div>
+      </div>
+      <div class="timeline t-amber" style="border-color:#f59e0b;">
+        <h3 style="color:var(--ink-0);">Days 61–90</h3>
+        <ul>
+          <li><strong>Fix master data gaps</strong> — batch update customer bank linkages</li>
+          <li><strong>Tune FEBAN</strong> tolerance &amp; fuzzy rules based on audit</li>
+          <li><strong>Send remittance template</strong> to top-20 customers</li>
+          <li><strong>Pilot virtual accounts</strong> with 5 customers</li>
+          <li><strong>Build exception queue</strong> report in SAP / BI tool</li>
+          <li><strong>Configure retry engine</strong> for failed auto-postings</li>
+          <li><strong>Report Week-4 vs Week-8</strong> delta to leadership</li>
+        </ul>
+        <div class="target t-amber" style="border-color:rgba(251,191,36,.4); background:rgba(251,191,36,.1);">Target: 50% → 70%</div>
+      </div>
+      <div class="timeline t-purple" style="border-color:#8b5cf6;">
+        <h3 style="color:var(--ink-0);">Days 91–180</h3>
+        <ul>
+          <li><strong>Expand virtual accounts</strong> to top-50 customers</li>
+          <li><strong>Train AR team</strong> on exception best practices</li>
+          <li><strong>Establish monthly tune-up</strong> governance meeting</li>
+          <li><strong>Implement deduction workflow</strong> for standard codes</li>
+          <li><strong>Pareto review</strong> — month-1 vs month-3 exception reasons</li>
+          <li><strong>Publish Month-3 scorecard</strong> to leadership</li>
+          <li><strong>Scope Phase 3</strong> matching improvements</li>
+        </ul>
+        <div class="target t-purple" style="border-color:rgba(192,132,252,.4); background:rgba(192,132,252,.1);">Target: 70% → 85%+</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 · KPIs -->
+  <section class="slide" data-section="KPIs">
+    <div class="slidenum">10</div>
+    <span class="kicker"><span class="dot"></span>Measurement</span>
+    <h2>KPIs to <span class="grad">Measure Success</span></h2>
+    <div class="row cols-2">
+      <div class="panel">
+        <h3>📊 Track These Metrics</h3>
+        <table style="font-size:.8rem;">
+          <thead><tr><th>KPI</th><th>Frequency</th><th>Target</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Auto-Post Rate</strong></td><td>Daily</td><td><strong class="t-green">&gt; 90%</strong></td></tr>
+            <tr><td><strong>Exception Resolution</strong></td><td>Weekly</td><td><strong class="t-green">&lt; 24 hrs</strong></td></tr>
+            <tr><td><strong>Misapplication Rate</strong></td><td>Monthly</td><td><strong class="t-green">&lt; 0.5%</strong></td></tr>
+            <tr><td><strong>DSO Impact</strong></td><td>Monthly</td><td><strong class="t-blue">–2 days</strong></td></tr>
+            <tr><td><strong>Cost Per Posting</strong></td><td>Quarterly</td><td><strong class="t-blue">–60%</strong></td></tr>
+            <tr><td><strong>Customer Disputes</strong></td><td>Monthly</td><td><strong class="t-green">&lt; 1%</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <h3>🗂️ Exception Reason Codes — Tag Every Manual Posting</h3>
+        <div class="code-row" style="border-left-color:var(--red);"><span class="code t-red">MISS_INV</span><span class="muted">Missing invoice reference from customer</span></div>
+        <div class="code-row" style="border-left-color:var(--orange);"><span class="code t-orange">SHORT_PAY</span><span class="muted">Payment received less than invoice amount</span></div>
+        <div class="code-row" style="border-left-color:var(--amber);"><span class="code t-yellow">OVER_PAY</span><span class="muted">Payment received more than invoice amount</span></div>
+        <div class="code-row" style="border-left-color:var(--purple);"><span class="code t-purple">DUP_REF</span><span class="muted">Duplicate reference across multiple accounts</span></div>
+        <div class="code-row" style="border-left-color:var(--blue);"><span class="code t-blue">CUST_DATA</span><span class="muted">Customer master / bank key issue in SAP</span></div>
+        <div class="code-row" style="border-left-color:var(--teal);"><span class="code t-teal">BANK_FMT</span><span class="muted">Bank statement reference format mismatch</span></div>
+        <div class="code-row" style="border-left-color:var(--ink-2);"><span class="code" style="color:var(--ink-1);">TIMING</span><span class="muted">Invoice not yet created when payment arrived</span></div>
+        <span class="tag yellow">📈 Monthly Pareto review → fix top 2 codes each month</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 · Closing -->
+  <section class="slide" data-section="Next Steps">
+    <div class="slidenum">11</div>
+    <span class="kicker"><span class="dot"></span>Decision time</span>
+    <h2>The Opportunity Is <span class="grad">Clear</span></h2>
+    <p class="muted" style="font-size:1.08rem; margin-bottom:24px;">Moving from <strong>65%</strong> → <strong>90%+</strong> auto-posting is achievable in 6 months</p>
+    <div class="row cols-4" style="margin-bottom:30px;">
+      <div class="panel stat bd-teal glow-teal"><div class="num t-teal" style="font-size:2rem;">+25%</div><div class="lbl">Auto-Post Rate Uplift</div></div>
+      <div class="panel stat bd-green glow-green"><div class="num t-green" style="font-size:2rem;">–60%</div><div class="lbl">Manual Processing Cost</div></div>
+      <div class="panel stat bd-blue glow-blue"><div class="num t-blue" style="font-size:2rem;">–2 days</div><div class="lbl">Days Sales Outstanding</div></div>
+      <div class="panel stat bd-purple glow-purple"><div class="num t-purple" style="font-size:2rem;">&lt;1%</div><div class="lbl">Target Error Rate</div></div>
+    </div>
+    <h3 style="text-align:center;">Next Steps — We Need Your Decision:</h3>
+    <div class="cta">
+      <div class="ph-teal">1. Approve 30-day audit sprint</div>
+      <div class="ph-amber">2. Assign AR automation champion</div>
+      <div class="ph-violet">3. Assign exception reason codes now</div>
+    </div>
+  </section>
+
+</div>
+
+<div id="chrome">
+  <div class="meta">
+    <span class="section-label" id="section-label"></span>
+    <span>&middot;</span>
+    <span class="count"><span id="idx">1</span> / <span id="total"></span></span>
+  </div>
+  <div class="navbtns">
+    <button class="navbtn" id="btn-overview" title="Overview (O)">
+      <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/><rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.6"/></svg>
+    </button>
+    <button class="navbtn" id="btn-prev" title="Previous (&larr;)">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="navbtn" id="btn-next" title="Next (&rarr;)">
+      <svg viewBox="0 0 24 24" fill="none"><path d="M9 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="overview">
+  <h3>All slides &mdash; click to jump</h3>
+  <div class="grid" id="overview-grid"></div>
+</div>
+
+<script>
+(function(){
+  var slides = [...document.querySelectorAll('.slide')];
+  var total = slides.length;
+  var i = 0;
+
+  document.getElementById('total').textContent = total;
+
+  function titleOf(s){
+    var h = s.querySelector('h1,h2');
+    return h ? h.textContent.trim().split('\n')[0] : '';
+  }
+
+  function render(){
+    slides.forEach(function(s,idx){ s.classList.toggle('active', idx===i); });
+    document.getElementById('idx').textContent = i+1;
+    document.getElementById('section-label').textContent = slides[i].dataset.section || '';
+    document.getElementById('progress').style.width = ((i+1)/total*100) + '%';
+    document.querySelectorAll('#overview-grid .card').forEach(function(c,idx){
+      c.classList.toggle('current', idx===i);
+    });
+  }
+
+  function show(n){ i = (n+total)%total; render(); }
+
+  document.getElementById('btn-next').addEventListener('click', function(){ show(i+1); });
+  document.getElementById('btn-prev').addEventListener('click', function(){ show(i-1); });
+
+  document.addEventListener('keydown', function(e){
+    if (document.getElementById('overview').classList.contains('open')) {
+      if (e.key === 'Escape' || e.key.toLowerCase() === 'o') closeOverview();
+      return;
+    }
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); show(i+1); }
+    if (e.key === 'ArrowLeft') show(i-1);
+    if (e.key === 'Home') show(0);
+    if (e.key === 'End') show(total-1);
+    if (e.key.toLowerCase() === 'f') toggleFullscreen();
+    if (e.key.toLowerCase() === 'o') openOverview();
+  });
+
+  function toggleFullscreen(){
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(function(){});
+    else document.exitFullscreen();
+  }
+
+  var grid = document.getElementById('overview-grid');
+  slides.forEach(function(s, idx){
+    var card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = '<div class="n">' + String(idx+1).padStart(2,'0') + ' &middot; ' + (s.dataset.section||'') + '</div><div class="t">' + titleOf(s) + '</div>';
+    card.addEventListener('click', function(){ show(idx); closeOverview(); });
+    grid.appendChild(card);
+  });
+  function openOverview(){ document.getElementById('overview').classList.add('open'); }
+  function closeOverview(){ document.getElementById('overview').classList.remove('open'); }
+  document.getElementById('btn-overview').addEventListener('click', openOverview);
+  document.getElementById('overview').addEventListener('click', function(e){ if (e.target.id === 'overview') closeOverview(); });
+
+  render();
+})();
+</script>
+
+</body>
+</html>
